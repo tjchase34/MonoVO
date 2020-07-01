@@ -2,8 +2,8 @@
 #include <iostream>
 
 
-#define MAX_FEATURES = 1000;
-#define MAX_GOOD = 0.15f;
+#define MAX_FEATURES 1000
+#define MAX_GOOD 0.15f
 
 
 int main(int argc, char** argv) {
@@ -29,7 +29,7 @@ int main(int argc, char** argv) {
     }
 
     // Create ORB
-    cv::Ptr<cv::feature2d> orb = cv::ORB::create(MAX_FEATURES);
+    cv::Ptr<cv::Feature2D> orb = cv::ORB::create(MAX_FEATURES);
 
     // Global rotation, translation trajectory (we build this up at every step)
     cv::Mat R_jec, t_jec;
@@ -47,16 +47,16 @@ int main(int argc, char** argv) {
         frame2 = cv::imread(frame_paths[i+1]);
 
         // Convert images to grayscale
-        cv::cvtColor(frame1, frame1, cv::CV_BGR2GRAY);
-        cv::cvtColor(frame2, frame2, cv::CV_BGR2GRAY);
+        cv::cvtColor(frame1, frame1, CV_BGR2GRAY);
+        cv::cvtColor(frame2, frame2, CV_BGR2GRAY);
 
         // Keypoint/descriptor stores 
-        std::vector<cv::keypoint> kp1, kp2;
+        std::vector<cv::KeyPoint> kp1, kp2;
         cv::Mat desc1, desc2;
 
         // Detect features in i and i+1
-        orb->detectAndCompute(frame_1, Mat(), kp1, desc1);
-        orb->detectAndCompute(frame_2, Mat(), kp2, desc2);
+        orb->detectAndCompute(frame1, cv::Mat(), kp1, desc1);
+        orb->detectAndCompute(frame2, cv::Mat(), kp2, desc2);
 
         // Match them (brute force)
         cv::BFMatcher bf = cv::BFMatcher(cv::NORM_HAMMING, true);
@@ -64,10 +64,10 @@ int main(int argc, char** argv) {
         bf.match(desc1, desc2,  matches);
 
         // sort matches
-        std::sort(matches.begin(), matches.end(), [](cv::DMatch a, cv::DMatch b) {return a.distance > b.distance});
+        std::sort(matches.begin(), matches.end(), [](cv::DMatch a, cv::DMatch b) {return a.distance > b.distance;});
 
         // Grab pts1/pts2
-        vector<cv::Point2f> pts1, pts2;
+        std::vector<cv::Point2f> pts1, pts2;
         for (int i=0; i<matches.size() * MAX_GOOD; i++) {
             pts1.push_back(kp1[matches[i].queryIdx].pt);
             pts2.push_back(kp2[matches[i].trainIdx].pt);
@@ -84,7 +84,7 @@ int main(int argc, char** argv) {
         cv::recoverPose(E, pts2, pts1, R, t, focal, pp, mask);
 
         // Compute global trajectory
-        if (fist) {
+        if (first) {
             R_jec = R.clone();
             t_jec = t.clone();
             first = false;
@@ -95,6 +95,13 @@ int main(int argc, char** argv) {
 
         // Append to the global trajectory for plotting afterward
         trajectory.push_back(std::make_pair(R_jec, t_jec));
+
+        // cvNamedWindow("1", CV_WINDOW_AUTOSIZE);
+        // cvNamedWindow("2", CV_WINDOW_AUTOSIZE);
+        // imshow("1", frame1);
+        // imshow("2", frame2);
+
+        // cv::waitKey(0);
 
     }
 
