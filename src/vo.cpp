@@ -7,7 +7,13 @@
 #include <gtsam/slam/BetweenFactor.h>
 #include <gtsam/nonlinear/NonlinearFactorGraph.h>
 #include <gtsam/nonlinear/LevenbergMarquardtOptimizer.h>
+#include <gtsam/nonlinear/Marginals.h>
 #include <gtsam/nonlinear/Values.h>
+#include <gtsam/inference/Symbol.h>
+#include <gtsam/slam/PriorFactor.h>
+
+using namespace std;
+using namespace gtsam;
 
 
 #define MAX_FEATURES 1000
@@ -90,7 +96,7 @@ int main(int argc, char** argv) {
 
     // Get all frame paths for the KITTI dataset
     std::vector<cv::String> frame_paths;
-    glob(dataPath + "/*.png", frame_paths, false);
+    cv::glob(dataPath + "/*.png", frame_paths, false);
 
     int numFrames = frame_paths.size();
     // int numFrames = 1000;
@@ -116,6 +122,39 @@ int main(int argc, char** argv) {
 
     double scale = 1.00;
 
+    // Make Graph
+    NonlinearFactorGraph graph;
+
+    // Add a prior on the first pose, setting it to the origin
+    // The prior is needed to fix/align the whole trajectory at world frame
+    // A prior factor consists of a mean value and a noise model (covariance matrix)
+    // auto priorNoise = noiseModel::Diagonal::Sigmas(Vector3(1.0, 1.0, 0.1));
+
+    // auto priorModel = noiseModel::Diagonal::Sigmas(Vector6(1.0, 1.0, 1.0, 1.0, 1.0, 1.1));
+    // auto priorNoise = noiseModel::Diagonal::Sigmas((Vector(6)<<0.3,0.3,0.3,0.1,0.1,0.1).finished());
+
+    // Add prior on the first key
+    // auto priorModel = noiseModel::Diagonal::Sigmas(
+    //     (Vector(6) << 1e-6, 1e-6, 1e-6, 1e-4, 1e-4, 1e-4).finished());
+
+    // graph.addPrior(PriorFactor<Pose3>(Symbol('x', 0), Pose3(), priorModel));
+    // graph.addPrior(0, Pose3(), priorNoise);
+
+    // 2a. Add a prior on the first pose, setting it to the origin
+  // A prior factor consists of a mean and a noise model (covariance matrix)
+    auto priorNoise = noiseModel::Diagonal::Sigmas(Vector3(0.3, 0.3, 0.1));
+    graph.addPrior(0, Pose2(0, 0, 0), priorNoise);
+
+    // odometry measurement noise model (covariance matrix)
+    auto odomNoise = noiseModel::Diagonal::Sigmas(Vector3(0.2, 0.2, 0.1));
+
+    // Specify uncertainty on first pose prior and also for between factor (simplicity reasons)
+    // auto odomNoise = noiseModel::Diagonal::Sigmas((Vector(6)<<0.3,0.3,0.3,0.1,0.1,0.1).finished());
+    // auto odomNoise = noiseModel::Diagonal::Sigmas(Vector6(1.0, 1.0, 1.0, 1.0, 1.0, 1.1));
+
+    Values initial;
+    initial.insert(0, Pose2(0,0,0));
+
     // Loop through frames
     for (int i=0; i<numFrames-1; i++) {
 
@@ -131,8 +170,8 @@ int main(int argc, char** argv) {
         frame2 = cv::imread(frame_paths[i+1]);
 
         // Convert images to grayscale
-        cv::cvtColor(frame1, frame1, CV_BGR2GRAY);
-        cv::cvtColor(frame2, frame2, CV_BGR2GRAY);
+        cv::cvtColor(frame1, frame1, cv::COLOR_BGR2GRAY);
+        cv::cvtColor(frame2, frame2, cv::COLOR_BGR2GRAY);
 
         // Keypoint/descriptor stores 
         std::vector<cv::KeyPoint> kp1, kp2;
@@ -186,58 +225,66 @@ int main(int argc, char** argv) {
         // }
 
         // Append to the global trajectory for plotting afterward
-        cv::Mat concat;
-        cv::hconcat(R_jec, t_jec, concat);
-        trajectory.push_back(concat);
+        // cv::Mat concat;
+        // cv::hconcat(R_jec, t_jec, concat);
+        // trajectory.push_back(concat);
 
 
-        //TODO: Add pose3(R, t) to factor graph
+        // Add odometry factors
+        // Create odometry (Between) factors between consecutive poses
+        // Rot3 rot = Rot3(R.at<double>(0,0), R.at<double>(0,1), R.at<double>(0,2),
+        //                 R.at<double>(1,0), R.at<double>(1,1), R.at<double>(1,2),
+        //                 R.at<double>(2,0), R.at<double>(2,1), R.at<double>(2,2));
 
+        Rot2 rot = Rot2(R.at<double>(0,0), R.at<double>(0,1), R.at<double>(0,2),
+                        R.at<double>(1,0), R.at<double>(1,1), R.at<double>(1,2));
 
+        Point2 p = Point2(t.at<double>(0), t.at<double>(1));
 
+        int j = i;
+        int k = i + 1;
 
-
-
-        // std::cout << concat << std::endl; 
-
-        // cvNamedWindow("1", CV_WINDOW_AUTOSIZE);
-        // cvNamedWindow("2", CV_WINDOW_AUTOSIZE);
-        // imshow("1", frame1);
-        // imshow("2", frame2);
-
-        // cv::waitKey(0);
-
+        graph.add(BetweenFactor<Pose2>(j, k, Pose2(rot, p), odomNoise));
+        // graph.emplace_shared<BetweenFactor<Pose3>>(j, k, Pose3(rot, p), odomNoise);
+        initial.insert(k, Pose2(rot, p));
     }
+
+    graph.print("\nFactor Graph:\n");
+
+    Values result = LevenbergMarquardtOptimizer(graph, initial).optimize();
+    result.print("Final Result:\n");
 
     std::ofstream file;
     file.open(outputPath, std::ofstream::trunc);
-
-    clock_t end = clock();
-    double elapsed_secs = double(end - begin) / CLOCKS_PER_SEC;
-    
-    std::cout << "Finished! Total time taken: " << elapsed_secs << "s" << std::endl;
-    std::cout << "Writing trajectories (" << trajectory.size() << ")..." << std::endl; 
-
-    // Write out trajectories
-    for (int i=0; i<trajectory.size(); i++) {
-
-        cv::Mat curTraj = trajectory[i];
-
-        // Loop over (j,k)
-        for (int j=0; j<3; j++) {
-            for (int k=0; k<4; k++) {
-                // file << std::fixed << std::setprecision(6) << curTraj.at<double>(j,k);
-                file << curTraj.at<double>(j,k);
-                if (j != 2 || k != 3) {
-                    file << " ";
-                }
-            }
-        }
-
-        file << std::endl;
-    }
-
+    graph.saveGraph(file);
     file.close();
+
+    // clock_t end = clock();
+    // double elapsed_secs = double(end - begin) / CLOCKS_PER_SEC;
+    
+    // std::cout << "Finished! Total time taken: " << elapsed_secs << "s" << std::endl;
+    // std::cout << "Writing trajectories (" << trajectory.size() << ")..." << std::endl; 
+
+    // // Write out trajectories
+    // for (int i=0; i<trajectory.size(); i++) {
+
+    //     cv::Mat curTraj = trajectory[i];
+
+    //     // Loop over (j,k)
+    //     for (int j=0; j<3; j++) {
+    //         for (int k=0; k<4; k++) {
+    //             // file << std::fixed << std::setprecision(6) << curTraj.at<double>(j,k);
+    //             file << curTraj.at<double>(j,k);
+    //             if (j != 2 || k != 3) {
+    //                 file << " ";
+    //             }
+    //         }
+    //     }
+
+    //     file << std::endl;
+    // }
+
+    // file.close();
 
     return 0;
 }
