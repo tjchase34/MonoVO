@@ -3,7 +3,7 @@
 #include <fstream>
 
 // GTSAM
-#include <gtsam/geometry/Pose2.h>
+#include <gtsam/geometry/Pose3.h>
 #include <gtsam/slam/BetweenFactor.h>
 #include <gtsam/nonlinear/NonlinearFactorGraph.h>
 #include <gtsam/nonlinear/LevenbergMarquardtOptimizer.h>
@@ -17,7 +17,8 @@ using namespace gtsam;
 
 
 #define MAX_FEATURES 1000
-#define MAX_GOOD 0.15f
+#define MAX_GOOD 0.55f
+#define KEYFRAME 5
 
 
 double getAbsoluteScale(int frame_id, int sequence_id, double z_cal)	{
@@ -55,6 +56,7 @@ double getAbsoluteScale(int frame_id, int sequence_id, double z_cal)	{
   return sqrt((x-x_prev)*(x-x_prev) + (y-y_prev)*(y-y_prev) + (z-z_prev)*(z-z_prev)) ;
 
 }
+
 
 void featureTracking(cv::Mat img_1, cv::Mat img_2, std::vector<cv::Point2f>& points1, std::vector<cv::Point2f>& points2, std::vector<uchar>& status)	{ 
 
@@ -134,29 +136,36 @@ int main(int argc, char** argv) {
     // auto priorNoise = noiseModel::Diagonal::Sigmas((Vector(6)<<0.3,0.3,0.3,0.1,0.1,0.1).finished());
 
     // Add prior on the first key
-    // auto priorModel = noiseModel::Diagonal::Sigmas(
-    //     (Vector(6) << 1e-6, 1e-6, 1e-6, 1e-4, 1e-4, 1e-4).finished());
+    auto priorNoise = noiseModel::Diagonal::Sigmas(
+        (Vector(6) << 1e-6, 1e-6, 1e-6, 1e-4, 1e-4, 1e-4).finished());
 
-    // graph.addPrior(PriorFactor<Pose3>(Symbol('x', 0), Pose3(), priorModel));
-    // graph.addPrior(0, Pose3(), priorNoise);
+    // graph.addPrior(PriorFactor<Pose3>(Symbol('x', 0), Pose3(), priorNoise));
+    graph.addPrior(0, Pose3(), priorNoise);
 
     // 2a. Add a prior on the first pose, setting it to the origin
   // A prior factor consists of a mean and a noise model (covariance matrix)
-    auto priorNoise = noiseModel::Diagonal::Sigmas(Vector3(0.3, 0.3, 0.1));
-    graph.addPrior(0, Pose2(0, 0, 0), priorNoise);
+    // auto priorNoise = noiseModel::Diagonal::Sigmas(Vector3(0.3, 0.3, 0.1));
+    // graph.addPrior(0, Pose2(0, 0, 0), priorNoise);
 
     // odometry measurement noise model (covariance matrix)
-    auto odomNoise = noiseModel::Diagonal::Sigmas(Vector3(0.2, 0.2, 0.1));
+    // auto odomNoise = noiseModel::Diagonal::Sigmas(Vector3(0.2, 0.2, 0.1));
 
     // Specify uncertainty on first pose prior and also for between factor (simplicity reasons)
-    // auto odomNoise = noiseModel::Diagonal::Sigmas((Vector(6)<<0.3,0.3,0.3,0.1,0.1,0.1).finished());
+    auto odomNoise = noiseModel::Diagonal::Sigmas((Vector(6)<<0.3,0.3,0.3,0.1,0.1,0.1).finished());
     // auto odomNoise = noiseModel::Diagonal::Sigmas(Vector6(1.0, 1.0, 1.0, 1.0, 1.0, 1.1));
 
     Values initial;
-    initial.insert(0, Pose2(0,0,0));
+    initial.insert(0, Pose3());
 
     // Loop through frames
-    for (int i=0; i<numFrames-1; i++) {
+    int node = 0;
+    cv::Mat last_frame;
+    for (int i=0; i<numFrames-1; i+=KEYFRAME) {
+
+        if (i == 0) {
+          last_frame = cv::imread(frame_paths[i]);
+          cv::cvtColor(last_frame, last_frame, cv::COLOR_BGR2GRAY);
+        }
 
         if (i%100 == 0 && i != 0) {
             clock_t now = clock();
@@ -164,27 +173,32 @@ int main(int argc, char** argv) {
             std::cout << "Processed " << i << " frames... (" << elapsed_secs << "s)" << std::endl;
         }
 
-        // Read frame i and i+1
-        cv::Mat frame1, frame2;
-        frame1 = cv::imread(frame_paths[i]);
-        frame2 = cv::imread(frame_paths[i+1]);
+        // Read frame i
+        cv::Mat curr_frame;
+        curr_frame = cv::imread(frame_paths[i]);
 
-        // Convert images to grayscale
-        cv::cvtColor(frame1, frame1, cv::COLOR_BGR2GRAY);
-        cv::cvtColor(frame2, frame2, cv::COLOR_BGR2GRAY);
+        // Convert image to grayscale
+        cv::cvtColor(curr_frame, curr_frame, cv::COLOR_BGR2GRAY);
 
         // Keypoint/descriptor stores 
         std::vector<cv::KeyPoint> kp1, kp2;
         cv::Mat desc1, desc2;
 
         // Detect features in i and i+1
-        orb->detectAndCompute(frame1, cv::Mat(), kp1, desc1);
-        orb->detectAndCompute(frame2, cv::Mat(), kp2, desc2);
+        orb->detectAndCompute(last_frame, cv::Mat(), kp1, desc1);
+        orb->detectAndCompute(curr_frame, cv::Mat(), kp2, desc2);
 
         // Match them (brute force)
         cv::BFMatcher bf = cv::BFMatcher(cv::NORM_HAMMING, true);
         std::vector<cv::DMatch> matches;
         bf.match(desc1, desc2,  matches);
+
+        // MATCH VIEWING
+        // std::vector<cv::DMatch> some_matches = std::vector<cv::DMatch>(matches.begin(), matches.begin()+20);
+        // cv::Mat frame_matches;
+        // cv::drawMatches(frame1, kp1, frame2, kp2, some_matches, frame_matches, cv::Scalar::all(-1), cv::Scalar::all(-1));
+        // cv::imshow("Matches",frame_matches);
+        // cv::waitKey(0);
 
         // sort matches
         std::sort(matches.begin(), matches.end(), [](cv::DMatch a, cv::DMatch b) {return a.distance > b.distance;});
@@ -229,40 +243,41 @@ int main(int argc, char** argv) {
         // cv::hconcat(R_jec, t_jec, concat);
         // trajectory.push_back(concat);
 
-
+        // Add keyframe
+        // if (i%KEYFRAME == 0) {
         // Add odometry factors
         // Create odometry (Between) factors between consecutive poses
-        // Rot3 rot = Rot3(R.at<double>(0,0), R.at<double>(0,1), R.at<double>(0,2),
-        //                 R.at<double>(1,0), R.at<double>(1,1), R.at<double>(1,2),
-        //                 R.at<double>(2,0), R.at<double>(2,1), R.at<double>(2,2));
+        Rot3 rot = Rot3(R.at<double>(0,0), R.at<double>(0,1), R.at<double>(0,2),
+                        R.at<double>(1,0), R.at<double>(1,1), R.at<double>(1,2),
+                        R.at<double>(2,0), R.at<double>(2,1), R.at<double>(2,2));
 
-        Rot2 rot = Rot2(R.at<double>(0,0), R.at<double>(0,1), R.at<double>(0,2),
-                        R.at<double>(1,0), R.at<double>(1,1), R.at<double>(1,2));
+        // Rot2 rot = Rot2(R.at<double>(0,0), R.at<double>(0,1), R.at<double>(0,2),
+                        // R.at<double>(1,0), R.at<double>(1,1), R.at<double>(1,2));
 
-        Point2 p = Point2(t.at<double>(0), t.at<double>(1));
+        Point3 p = Point3(t.at<double>(0), t.at<double>(1), t.at<double>(2));
 
-        int j = i;
-        int k = i + 1;
-
-        graph.add(BetweenFactor<Pose2>(j, k, Pose2(rot, p), odomNoise));
+        graph.add(BetweenFactor<Pose3>(node, node+1, Pose3(rot, p), odomNoise));
         // graph.emplace_shared<BetweenFactor<Pose3>>(j, k, Pose3(rot, p), odomNoise);
-        initial.insert(k, Pose2(rot, p));
+        initial.insert(node+1, Pose3(rot, p));
+        ++node;
+        last_frame = curr_frame;
+        // }
     }
 
     graph.print("\nFactor Graph:\n");
 
-    Values result = LevenbergMarquardtOptimizer(graph, initial).optimize();
-    result.print("Final Result:\n");
+    // Values result = LevenbergMarquardtOptimizer(graph, initial).optimize();
+    // result.print("Final Result:\n");
 
     std::ofstream file;
     file.open(outputPath, std::ofstream::trunc);
     graph.saveGraph(file);
     file.close();
 
-    // clock_t end = clock();
-    // double elapsed_secs = double(end - begin) / CLOCKS_PER_SEC;
+    clock_t end = clock();
+    double elapsed_secs = double(end - begin) / CLOCKS_PER_SEC;
     
-    // std::cout << "Finished! Total time taken: " << elapsed_secs << "s" << std::endl;
+    std::cout << "Finished! Total time taken: " << elapsed_secs << "s" << std::endl;
     // std::cout << "Writing trajectories (" << trajectory.size() << ")..." << std::endl; 
 
     // // Write out trajectories
