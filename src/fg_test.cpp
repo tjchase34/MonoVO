@@ -10,6 +10,7 @@
 #include <gtsam/nonlinear/Values.h>
 #include <gtsam/inference/Symbol.h>
 #include <gtsam/slam/PriorFactor.h>
+#include <gtsam/nonlinear/utilities.h>
 
 using namespace gtsam;
 using namespace std;
@@ -34,6 +35,19 @@ int main(int argc, char** argv) {
 
     // Add pose constraint
     graph.add(BetweenFactor<Pose2>(5, 2, Pose2(2, 0, M_PI_2), model));
+
+    graph.print("\nFactor Graph:\n");
+
+    Values initialEstimate;
+    initialEstimate.insert(1, Pose2(2, 0, 0));
+    initialEstimate.insert(2, Pose2(2, 0, M_PI_2));
+    initialEstimate.insert(3, Pose2(2, 0, M_PI_2));
+    initialEstimate.insert(4, Pose2(2, 0, M_PI_2));
+    initialEstimate.insert(5, Pose2(2, 0, M_PI_2));
+    initialEstimate.print("\nInitial Estimate:\n");
+
+    Matrix test = gtsam::utilities::extractPose2(initialEstimate);
+    std::cout << test.size << std::endl;
 
     std::ofstream file;
     file.open("fg_test.graph", std::ofstream::trunc);
