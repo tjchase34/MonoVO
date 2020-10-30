@@ -39,16 +39,31 @@ int main(int argc, char** argv) {
     graph.print("\nFactor Graph:\n");
 
     Values initialEstimate;
-    initialEstimate.insert(1, Pose2(2, 0, 0));
-    initialEstimate.insert(2, Pose2(2, 0, M_PI_2));
+    initialEstimate.insert(1, Pose2(0, 0, 0));
+    initialEstimate.insert(2, Pose2(2, 0, 0));
     initialEstimate.insert(3, Pose2(2, 0, M_PI_2));
     initialEstimate.insert(4, Pose2(2, 0, M_PI_2));
     initialEstimate.insert(5, Pose2(2, 0, M_PI_2));
+    initialEstimate.insert(6, Pose2(2, 0, M_PI_2));
     initialEstimate.print("\nInitial Estimate:\n");
 
     Matrix test = gtsam::utilities::extractPose2(initialEstimate);
-    std::cout << test.size << std::endl;
-
+    std::ofstream traj_file;
+    traj_file.open("fg_test_traj.txt", std::ofstream::trunc);
+    // traj_file << test;
+    // traj_file << test.format(CSVFormat);
+    
+    for (int i=0; i<test.rows(); ++i) {
+        for (int j=0; j<test.cols(); ++j) {
+            traj_file << test(i,j);
+            if (j != test.cols()-1) {
+                traj_file << " ";
+            }
+        }
+        traj_file << "\n";
+    }
+    traj_file.close();
+    
     std::ofstream file;
     file.open("fg_test.graph", std::ofstream::trunc);
     graph.saveGraph(file);

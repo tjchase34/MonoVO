@@ -1,4 +1,7 @@
 matlabrc; clc; close all;
+
+import gtsam.*
+
 addpath(genpath('tools')) % these are things you actually want
 addpath(genpath('misc')) % these are things just for generating fake data
 addpath(genpath('../'));
@@ -7,8 +10,10 @@ addpath(genpath('../'));
 gt = readtable('ground_truth_00.txt', 'Delimiter', ' ');
 gt = table2array(gt);
 
-mv = readtable('MonoVO_00.txt', 'Delimiter', ' ');
-mv = table2array(mv);
+traj = readtable('MonoVO_00_1000_scaling.txt', 'Delimiter', ' ');
+traj = table2array(traj);
+
+% plot2DTrajectory(traj, 'r~'); axis equal
 
 % lim = size(mv,1)
 % gt = gt(1:lim,:)
@@ -34,10 +39,10 @@ mv = table2array(mv);
 
 %% Just plot of trajectory:
 figure()
-plot3(gt(:,4),gt(:,8),gt(:,12)); hold on
-plot3(mv(:,4),mv(:,8),mv(:,12))
-% plot(gt(:,4),gt(:,12)); hold on
-% plot(mv(:,4),mv(:,12))
+% plot3(gt(:,4),gt(:,8),gt(:,12)); hold on
+%plot3(traj(:,10),traj(:,11),traj(:,12))
+plot(gt(1:1600,4),gt(1:1600,12)); hold on
+plot(traj(:,10),traj(:,12))
 axis equal
 
 %% Animation of just trajectory:
