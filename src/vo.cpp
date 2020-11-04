@@ -124,17 +124,17 @@ int main(int argc, char** argv) {
     // Add a prior on the first pose, setting it to the origin
     // The prior is needed to fix/align the whole trajectory at world frame
     // A prior factor consists of a mean value and a noise model (covariance matrix)
-    // auto priorNoise = noiseModel::Diagonal::Sigmas((Vector(6) << 1e-6, 1e-6, 1e-6, 1e-4, 1e-4, 1e-4).finished());
-    auto priorNoise = noiseModel::Diagonal::Sigmas(Vector3(1.0, 1.0, 0.1));
+    auto priorNoise = noiseModel::Diagonal::Sigmas((Vector(6) << 1e-6, 1e-6, 1e-6, 1e-4, 1e-4, 1e-4).finished());
+    // auto priorNoise = noiseModel::Diagonal::Sigmas(Vector3(1.0, 1.0, 0.1));
 
-    graph.addPrior(0, Pose2(0,0,0), priorNoise);
+    graph.addPrior(0, Pose3(), priorNoise);
 
     // Specify uncertainty on first pose prior and also for between factor (simplicity reasons)
-    // auto odomNoise = noiseModel::Diagonal::Sigmas((Vector(6)<<0.3,0.3,0.3,0.1,0.1,0.1).finished());
-    auto odomNoise = noiseModel::Diagonal::Sigmas(Vector3(0.2, 0.2, 0.1));
+    auto odomNoise = noiseModel::Diagonal::Sigmas((Vector(6)<<0.3,0.3,0.3,0.1,0.1,0.1).finished());
+    // auto odomNoise = noiseModel::Diagonal::Sigmas(Vector3(0.2, 0.2, 0.1));
 
     Values initial;
-    initial.insert(0, Pose2(0,0,0));
+    initial.insert(0, Pose3());
 
     // Loop through frames
     int node = 0;
@@ -214,20 +214,20 @@ int main(int argc, char** argv) {
 
         // Add odometry factors
         // Create odometry (Between) factors between consecutive poses
-        // Rot3 rot = Rot3(R.at<double>(0,0), R.at<double>(0,1), R.at<double>(0,2),
-                        // R.at<double>(1,0), R.at<double>(1,1), R.at<double>(1,2),
-                        // R.at<double>(2,0), R.at<double>(2,1), R.at<double>(2,2));
+        Rot3 rot = Rot3(R.at<double>(0,0), R.at<double>(0,1), R.at<double>(0,2),
+                        R.at<double>(1,0), R.at<double>(1,1), R.at<double>(1,2),
+                        R.at<double>(2,0), R.at<double>(2,1), R.at<double>(2,2));
 
-        // Point3 p = Point3(t.at<double>(0), t.at<double>(1), t.at<double>(2));
-        Point2 p = Point2(t.at<double>(0), -t.at<double>(2));
+        Point3 p = Point3(t.at<double>(0), t.at<double>(1), -t.at<double>(2));
+        // Point2 p = Point2(t.at<double>(0), -t.at<double>(2));
 
         // Get angle of rotation in radians
-        double theta = atan2(R.at<double>(2,1), R.at<double>(1,1));
+        // double theta = atan2(R.at<double>(2,1), R.at<double>(1,1));
         // Convert radians to degrees
-        theta = theta*(180.0/3.141592653589793238463);
+        // theta = theta*(180.0/3.141592653589793238463);
 
-        graph.add(BetweenFactor<Pose2>(node, node+1, Pose2(theta, p), odomNoise));
-        initial.insert(node+1, Pose2(theta, p));
+        graph.add(BetweenFactor<Pose3>(node, node+1, Pose3(rot, p), odomNoise));
+        initial.insert(node+1, Pose3(rot, p));
         ++node;
         last_frame = curr_frame;
 
@@ -267,10 +267,26 @@ int main(int argc, char** argv) {
     double elapsed_secs = double(end - begin) / CLOCKS_PER_SEC;
     std::cout << "Finished! Total time taken: " << elapsed_secs << "s" << std::endl;
 
-    // Recover poses and write to file
-    Matrix poses = gtsam::utilities::extractPose2(initial);
+    // Recover initial poses and write to file
+    Matrix poses = gtsam::utilities::extractPose3(initial);
     std::ofstream poses_file;
-    std::string outFile = "results/" + to_string(numFrames) + "_" + to_string(keyFrames) + "_poses.txt";
+    std::string outFile = "results/" + to_string(numFrames) + "_" + to_string(keyFrames) + "_poses_initial.txt";
+    poses_file.open(outFile, std::ofstream::trunc);
+    
+    for (int i=0; i<poses.rows(); ++i) {
+        for (int j=0; j<poses.cols(); ++j) {
+            poses_file << poses(i,j);
+            if (j != poses.cols()-1) {
+                poses_file << " ";
+            }
+        }
+        poses_file << "\n";
+    }
+    poses_file.close();
+
+    // Recover optimized poses and write to file
+    poses = gtsam::utilities::extractPose3(result);
+    outFile = "results/" + to_string(numFrames) + "_" + to_string(keyFrames) + "_poses_optimized.txt";
     poses_file.open(outFile, std::ofstream::trunc);
     
     for (int i=0; i<poses.rows(); ++i) {

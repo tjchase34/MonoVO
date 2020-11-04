@@ -4,33 +4,40 @@ addpath(genpath('../'));
 
 gt = readtable('../../ground_truth_00.txt', 'Delimiter', ' ');
 gt = table2array(gt);
+poses_init = readtable('../../results/1750_1_poses_initial.txt', 'Delimiter', ' ');
+poses_init = table2array(poses_init);
+poses_opt = readtable('../../results/1750_1_poses_optimized.txt', 'Delimiter', ' ');
+poses_opt = table2array(poses_opt);
 
-% traj = readtable('test.txt', 'Delimiter', ' ');
-% traj = readtable('test2.txt', 'Delimiter', ' ');
-traj = readtable('../../results/1750_1_poses.txt', 'Delimiter', ' ');
-traj = table2array(traj);
+graph_init = poseGraph3D;
+graph_opt = poseGraph3D;
 
-graph = poseGraph;
-
-for i = 1:size(traj, 1)
-%     x = traj(i,10);
-%     y = traj(i,11);
-%     z = traj(i,12);
-%     rot = traj(i,1:9);
-%     rot = reshape(rot, [3,3]);
-%     quat = rotm2quat(rot);
-
-    x = traj(i,1);
-    z = traj(i,2);
-    theta = traj(i,3);
-    addRelativePose(graph, [x z theta]);
+for i = 1:size(poses_init, 1)
+    x = poses_init(i,10);
+    y = poses_init(i,11);
+    z = poses_init(i,12);
+    rot = poses_init(i,1:9);
+    rot = reshape(rot, [3,3]);
+    quat = rotm2quat(rot);
+    addRelativePose(graph_init, [x y z quat]);
+    
+    x = poses_opt(i,10);
+    y = poses_opt(i,11);
+    z = poses_opt(i,12);
+    rot = poses_opt(i,1:9);
+    rot = reshape(rot, [3,3]);
+    quat = rotm2quat(rot);
+    addRelativePose(graph_opt, [x y z quat]);
 end
 
 figure(1)
-% axis equal
-graph
-show(graph, 'IDs', 'off'); hold on
-% axis equal
+show(graph_init, 'IDs', 'off'); hold on
+axis equal
+
 figure(2)
+show(graph_opt, 'IDs', 'off'); hold on
+axis equal
+
+figure(3)
 % plot(arr(:,1),arr(:,2)); hold on
-plot(gt(1:1750,4),gt(1:1750,12));
+plot3(gt(1:1750,4),gt(1:1750,4),gt(1:1750,12));
